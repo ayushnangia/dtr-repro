@@ -1,0 +1,31 @@
+# Table 3: Prefix length ablation for Think@n
+# Qwen3-4B on AIME 2025, varying prefix length
+defaults:
+  - /base
+  - /models/qwen3_4b
+  - _self_
+
+experiment:
+  name: table3_prefix_ablation
+  description: >-
+    Ablation over the number of prefix tokens used for DTR computation
+    in Think@n. -1 denotes using the full generated sequence.
+  n_samples: 48
+  n_trials: 10
+
+think_at_n:
+  eta: 0.5
+  prefix_lengths:
+    - 50
+    - 100
+    - 500
+    - 1000
+    - 2000
+    - -1    # Full sequence
+
+benchmarks:
+  - aime_2025
+
+output:
+  table: ${paths.tables_dir}/table3_prefix_ablation.csv
+  raw: ${paths.raw_dir}/table3

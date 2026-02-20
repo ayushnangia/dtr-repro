@@ -1,0 +1,30 @@
+# Base configuration for DTR experiments
+defaults:
+  - _self_
+
+# Generation settings
+generation:
+  max_new_tokens: 32768
+  temperature: 0.6
+  top_p: 0.95
+
+# DTR hyperparameters (Algorithm 1)
+dtr:
+  threshold_g: 0.5      # JSD threshold for settling
+  depth_ratio_rho: 0.85  # Fraction of layers for "deep" classification
+
+# Experiment settings
+experiment:
+  n_samples: 25          # Responses per question
+  n_seeds: 30            # Random seeds for averaging
+  base_seed: 42
+  n_bins: 5              # Quantile bins for correlation
+
+# Output paths
+paths:
+  data_dir: data_cache
+  results_dir: results
+  raw_dir: ${paths.results_dir}/raw
+  metrics_dir: ${paths.results_dir}/metrics
+  tables_dir: ${paths.results_dir}/tables
+  figures_dir: ${paths.results_dir}/figures

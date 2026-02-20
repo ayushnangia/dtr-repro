@@ -1,0 +1,37 @@
+# Table 1: Correlation analysis (DTR vs. accuracy across quantile bins)
+# 2 models x 4 benchmarks, 25 samples/question, 30 seeds, 5 quantile bins
+defaults:
+  - /base
+  - _self_
+
+experiment:
+  name: table1_correlation
+  description: >-
+    Spearman rank correlation between DTR (and baseline metrics) and
+    accuracy, averaged over 30 random seeds with 5 quantile bins.
+  n_samples: 25
+  n_seeds: 30
+  n_bins: 5
+
+models:
+  - deepseek_r1_70b
+  - qwen3_30b
+
+benchmarks:
+  - aime_2025
+  - hmmt_2025
+  - gpqa_diamond
+  - livecodebench
+
+metrics:
+  - dtr
+  - token_count
+  - reverse_token_count
+  - log_prob
+  - neg_perplexity
+  - neg_entropy
+  - self_certainty
+
+output:
+  table: ${paths.tables_dir}/table1_correlation.csv
+  raw: ${paths.raw_dir}/table1

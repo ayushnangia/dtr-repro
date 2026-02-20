@@ -1,0 +1,40 @@
+# Results (large, generated)
+results/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model weights / data cache
+models/
+data_cache/
+*.bin
+*.safetensors
+
+# SLURM logs
+slurm/logs/
+*.out
+*.err

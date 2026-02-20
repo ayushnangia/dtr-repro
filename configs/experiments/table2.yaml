@@ -1,0 +1,36 @@
+# Table 2: Think@n comparison against baseline selection strategies
+# Qwen3-4B on all 4 benchmarks, n=48 samples
+defaults:
+  - /base
+  - /models/qwen3_4b
+  - _self_
+
+experiment:
+  name: table2_think_at_n
+  description: >-
+    Compare Think@n against Cons@n, Mean@n, Long@n, Short@n, and
+    Self-Certainty@n on Qwen3-4B across all four benchmarks.
+  n_samples: 48
+  n_trials: 10
+
+think_at_n:
+  eta: 0.5
+  prefix_tokens: 50
+
+strategies:
+  - cons_at_n
+  - mean_at_n
+  - long_at_n
+  - short_at_n
+  - self_certainty_at_n
+  - think_at_n
+
+benchmarks:
+  - aime_2025
+  - hmmt_2025
+  - gpqa_diamond
+  - livecodebench
+
+output:
+  table: ${paths.tables_dir}/table2_think_at_n.csv
+  raw: ${paths.raw_dir}/table2

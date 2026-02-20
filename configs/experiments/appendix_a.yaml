@@ -1,0 +1,32 @@
+# Appendix A, Figure 6: Distance metric comparison
+# JSD vs KLD vs cosine distance on AIME 2025 + HMMT 2025
+defaults:
+  - /base
+  - _self_
+
+experiment:
+  name: appendix_a_distance_metrics
+  description: >-
+    Compare JSD, KLD, and cosine distance for layer-wise hidden-state
+    divergence. Reuses generation data from Table 1 on the two math
+    benchmarks (AIME 2025, HMMT 2025).
+
+# Source data from Table 1 generation runs
+source:
+  reuse_from: table1
+  benchmarks:
+    - aime_2025
+    - hmmt_2025
+
+models:
+  - deepseek_r1_70b
+  - qwen3_30b
+
+distance_metrics:
+  - jsd
+  - kld
+  - cosine_distance
+
+output:
+  figure: ${paths.figures_dir}/figure6_distance_comparison.pdf
+  raw: ${paths.raw_dir}/appendix_a

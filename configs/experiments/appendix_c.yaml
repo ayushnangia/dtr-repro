@@ -1,0 +1,36 @@
+# Appendix C, Figure 8: Think@n analysis (varying n and eta)
+# Qwen3-4B on all benchmarks, grid over n and eta
+defaults:
+  - /base
+  - /models/qwen3_4b
+  - _self_
+
+experiment:
+  name: appendix_c_think_at_n_analysis
+  description: >-
+    Analyse Think@n performance as a function of the number of
+    candidate responses (n) and the selection fraction (eta).
+    Qwen3-4B on all four benchmarks.
+
+think_at_n:
+  prefix_tokens: 50
+
+sweep:
+  n_values:
+    - 16
+    - 32
+    - 48
+  eta_values:
+    - 0.25
+    - 0.5
+    - 0.75
+
+benchmarks:
+  - aime_2025
+  - hmmt_2025
+  - gpqa_diamond
+  - livecodebench
+
+output:
+  figure: ${paths.figures_dir}/figure8_think_at_n_analysis.pdf
+  raw: ${paths.raw_dir}/appendix_c
