@@ -39,9 +39,15 @@ done
 module load python/3.11
 source ~/dtr-env/bin/activate
 
+# Store model weights in $PROJECT (persistent, backed up, 1TB quota).
+# $HOME is only 50GB -- large models (70B = ~140GB) would exceed it.
+export HF_HOME="${PROJECT}/hf-cache"
+mkdir -p "${HF_HOME}"
+
 echo "=== DTR: Downloading data and models ==="
 echo "Hostname: $(hostname)"
 echo "PROJECT:  ${PROJECT:-not set}"
+echo "HF_HOME:  ${HF_HOME}"
 echo ""
 
 # Download benchmark data
@@ -56,9 +62,9 @@ fi
 if [[ ${DATA_ONLY} -eq 0 ]]; then
     echo "--- Downloading model weights ---"
     if [[ -n "${SELECTED_MODELS}" ]]; then
-        python scripts/download_models.py --models "${SELECTED_MODELS}"
+        python scripts/download_models.py --models "${SELECTED_MODELS}" --cache_dir "${HF_HOME}"
     else
-        python scripts/download_models.py
+        python scripts/download_models.py --cache_dir "${HF_HOME}"
     fi
     echo ""
 fi
@@ -66,5 +72,5 @@ fi
 echo "=== Downloads complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. Replace 'def-CHANGEME' in slurm/*.sbatch with your account"
+echo "  1. Replace 'def-zhijing' in slurm/*.sbatch with your account"
 echo "  2. Submit jobs: ./slurm/submit_all.sh --experiment table1 --dry_run"

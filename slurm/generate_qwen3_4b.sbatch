@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=dtr-qwen4b
-#SBATCH --account=def-CHANGEME
+#SBATCH --account=def-zhijing
 #SBATCH --output=slurm/logs/%A_%a.out
 #SBATCH --error=slurm/logs/%A_%a.err
 #SBATCH --array=0-29
@@ -34,6 +34,7 @@ MODEL=qwen3_4b
 # Alliance Canada environment setup
 module load python/3.11
 source ~/dtr-env/bin/activate
+export HF_HOME="${PROJECT}/hf-cache"
 
 echo "=== DTR Generation: Qwen3-4B ==="
 echo "Job ID:       ${SLURM_JOB_ID}"
