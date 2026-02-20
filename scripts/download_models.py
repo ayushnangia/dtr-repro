@@ -34,15 +34,15 @@ logger = logging.getLogger(__name__)
 MODEL_INFO = {
     "deepseek_r1_70b": {
         "hf_id": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        "description": "DeepSeek-R1-Distill-Llama-70B (4x A100-80GB)",
+        "description": "DeepSeek-R1-Distill-Llama-70B (4x H100-80GB)",
     },
     "qwen3_30b": {
         "hf_id": "Qwen/Qwen3-30B-A3B",
-        "description": "Qwen3-30B-A3B MoE (2x A100-80GB)",
+        "description": "Qwen3-30B-A3B MoE (2x H100-80GB)",
     },
     "qwen3_4b": {
         "hf_id": "Qwen/Qwen3-4B",
-        "description": "Qwen3-4B dense (1x GPU)",
+        "description": "Qwen3-4B dense (1x H100-80GB)",
     },
 }
 
@@ -53,9 +53,9 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Available models:
-  deepseek_r1_70b   DeepSeek-R1-Distill-Llama-70B  (4x A100-80GB)
-  qwen3_30b         Qwen3-30B-A3B MoE              (2x A100-80GB)
-  qwen3_4b          Qwen3-4B dense                  (1x GPU)
+  deepseek_r1_70b   DeepSeek-R1-Distill-Llama-70B  (4x H100-80GB)
+  qwen3_30b         Qwen3-30B-A3B MoE              (2x H100-80GB)
+  qwen3_4b          Qwen3-4B dense                  (1x H100-80GB)
 
 Examples:
   python scripts/download_models.py --models deepseek_r1_70b,qwen3_30b,qwen3_4b
