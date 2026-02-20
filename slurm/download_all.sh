@@ -36,12 +36,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Activate environment
+if ! command -v module &>/dev/null; then
+    source /cvmfs/soft.computecanada.ca/config/profile/bash.sh 2>/dev/null || true
+fi
 module load python/3.11
 source ~/dtr-env/bin/activate
 
-# Store model weights in $PROJECT (persistent, backed up, 1TB quota).
-# $HOME is only 50GB -- large models (70B = ~140GB) would exceed it.
-export HF_HOME="${PROJECT}/hf-cache"
+# Store model weights outside $HOME (50GB quota).
+# Prefer $PROJECT > $SCRATCH > $HOME/hf-cache
+export HF_HOME="${PROJECT:-${SCRATCH:-$HOME}}/hf-cache"
 mkdir -p "${HF_HOME}"
 
 echo "=== DTR: Downloading data and models ==="
@@ -72,5 +75,5 @@ fi
 echo "=== Downloads complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. Replace 'def-zhijing' in slurm/*.sbatch with your account"
+echo "  1. Replace 'your-account' in slurm/*.sbatch with your account"
 echo "  2. Submit jobs: ./slurm/submit_all.sh --experiment table1 --dry_run"

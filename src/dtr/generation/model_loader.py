@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     "deepseek_r1_70b": {
         "hf_id": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        "local_path": "/model-weights/DeepSeek-R1-Distill-Llama-70B",
         "num_layers": 80,
         "hidden_dim": 8192,
         "is_moe": False,
@@ -22,6 +24,7 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "qwen3_30b": {
         "hf_id": "Qwen/Qwen3-30B-A3B",
+        "local_path": "/model-weights/Qwen3-30B-A3B",
         "num_layers": 48,
         "hidden_dim": 2048,
         "is_moe": True,
@@ -29,6 +32,7 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "qwen3_4b": {
         "hf_id": "Qwen/Qwen3-4B",
+        "local_path": "/model-weights/Qwen3-4B",
         "num_layers": 36,
         "hidden_dim": 2560,
         "is_moe": False,
@@ -222,8 +226,14 @@ def load_model(
     config = MODEL_REGISTRY[model_name]
     hf_id = config["hf_id"]
 
-    logger.info("Loading tokenizer for %s (%s)...", model_name, hf_id)
-    tokenizer = AutoTokenizer.from_pretrained(hf_id, trust_remote_code=True)
+    # Use local path if available (e.g. /model-weights/ on cluster), else HF hub
+    local_path = config.get("local_path")
+    model_path = local_path if local_path and Path(local_path).exists() else hf_id
+    logger.info(
+        "Loading tokenizer for %s (path=%s, source=%s)...",
+        model_name, model_path, "local" if model_path == local_path else "hub",
+    )
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     # Ensure pad token is set (many models lack one)
     if tokenizer.pad_token is None:
@@ -232,10 +242,10 @@ def load_model(
 
     logger.info(
         "Loading model %s (%s) with dtype=%s, device_map=%s...",
-        model_name, hf_id, dtype, device_map,
+        model_name, model_path, dtype, device_map,
     )
     model = AutoModelForCausalLM.from_pretrained(
-        hf_id,
+        model_path,
         torch_dtype=dtype,
         device_map=device_map,
         trust_remote_code=True,
