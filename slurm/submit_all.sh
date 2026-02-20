@@ -1,5 +1,9 @@
 #!/bin/bash
-# Submit SLURM jobs for DTR experiments.
+# Submit SLURM jobs for DTR experiments on Alliance Canada Killarney.
+#
+# IMPORTANT: Before first use, replace 'def-CHANGEME' with your actual
+# allocation account in all .sbatch files, or set the ACCOUNT env var:
+#   export ACCOUNT=def-yourpi
 #
 # Usage:
 #   # Submit all Table 1 jobs (2 models x 4 benchmarks)
@@ -62,6 +66,8 @@ while [[ $# -gt 0 ]]; do
         --help|-h)
             echo "Usage: $0 --experiment EXPERIMENT [OPTIONS]"
             echo ""
+            echo "Submit DTR generation jobs on Alliance Canada Killarney (H100 GPUs)."
+            echo ""
             echo "Options:"
             echo "  --experiment NAME    Experiment to run: table1, table2, table3, figure4, appendix_a, appendix_c, custom"
             echo "  --seeds SEEDS        Space-separated list of base seeds (default: '42')"
@@ -80,6 +86,9 @@ while [[ $# -gt 0 ]]; do
             echo "  appendix_a   Distance metrics (reuses table1 data, needs --store_jsd)"
             echo "  appendix_c   Think@n analysis: qwen3_4b x 4 benchmarks, n_samples=48"
             echo "  custom       Specify --models and --benchmarks manually"
+            echo ""
+            echo "Cluster: Killarney (H100-80GB GPUs)"
+            echo "Environment: ~/dtr-env (run slurm/setup_env.sh first)"
             exit 0
             ;;
         *)
@@ -105,7 +114,13 @@ submit_job() {
     local SBATCH_FILE="$4"
     local EXTRA_N_SAMPLES="${5:-${N_SAMPLES}}"
 
-    local CMD="BENCHMARK=${BENCHMARK} N_SAMPLES=${EXTRA_N_SAMPLES} SEED=${SEED} STORE_JSD=${STORE_JSD} sbatch ${SBATCH_FILE}"
+    # Override account if ACCOUNT env var is set
+    local ACCOUNT_FLAG=""
+    if [[ -n "${ACCOUNT:-}" ]]; then
+        ACCOUNT_FLAG="--account=${ACCOUNT}"
+    fi
+
+    local CMD="BENCHMARK=${BENCHMARK} N_SAMPLES=${EXTRA_N_SAMPLES} SEED=${SEED} STORE_JSD=${STORE_JSD} sbatch ${ACCOUNT_FLAG} ${SBATCH_FILE}"
 
     if [[ ${DRY_RUN} -eq 1 ]]; then
         echo "[DRY RUN] ${CMD}"
@@ -187,9 +202,9 @@ case "${EXPERIMENT}" in
         ;;
 esac
 
-echo "=========================================="
-echo "DTR Experiment Submission"
-echo "=========================================="
+echo "=============================================="
+echo "DTR Experiment Submission (Killarney H100)"
+echo "=============================================="
 echo "Experiment:  ${EXPERIMENT}"
 echo "Models:      ${MODELS}"
 echo "Benchmarks:  ${BENCHMARKS}"
@@ -197,7 +212,7 @@ echo "N Samples:   ${N_SAMPLES}"
 echo "Seeds:       ${SEEDS}"
 echo "Store JSD:   ${STORE_JSD}"
 echo "Dry Run:     ${DRY_RUN}"
-echo "=========================================="
+echo "=============================================="
 echo ""
 
 # Submit jobs
@@ -213,9 +228,12 @@ for SEED in ${SEEDS}; do
 done
 
 echo ""
-echo "=========================================="
+echo "=============================================="
 echo "Submitted ${JOB_COUNT} array jobs."
 if [[ ${DRY_RUN} -eq 1 ]]; then
     echo "(Dry run -- no jobs were actually submitted)"
 fi
-echo "=========================================="
+echo ""
+echo "Monitor with: sq"
+echo "Check logs:   tail -f slurm/logs/*.out"
+echo "=============================================="
