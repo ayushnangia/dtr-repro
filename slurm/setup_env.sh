@@ -10,7 +10,11 @@ set -euo pipefail
 
 echo "=== Setting up DTR environment on $(hostname) ==="
 
-module load python/3.11
+# Source Alliance CVMFS profile if module system not already available
+if ! command -v module &>/dev/null; then
+    source /cvmfs/soft.computecanada.ca/config/profile/bash.sh 2>/dev/null || true
+fi
+module load python/3.11 gcc arrow
 
 # Create virtualenv in $HOME (persistent, accessible from all nodes)
 if [[ -d ~/dtr-env ]]; then

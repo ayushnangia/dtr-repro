@@ -1,7 +1,7 @@
 #!/bin/bash
 # Submit SLURM jobs for DTR experiments on Alliance Canada Killarney.
 #
-# IMPORTANT: Before first use, replace 'def-zhijing' with your actual
+# IMPORTANT: Before first use, replace 'your-account' with your actual
 # allocation account in all .sbatch files, or set the ACCOUNT env var:
 #   export ACCOUNT=def-yourpi
 #

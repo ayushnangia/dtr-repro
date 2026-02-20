@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=dtr-qwen4b
-#SBATCH --account=def-zhijing
 #SBATCH --output=slurm/logs/%A_%a.out
 #SBATCH --error=slurm/logs/%A_%a.err
 #SBATCH --array=0-29
-#SBATCH --gpus-per-node=l40s:1
+#SBATCH --partition=gpubase_l40s_b2
+#SBATCH --gres=gpu:l40s:1
 #SBATCH --mem=40G
 #SBATCH --cpus-per-task=6
 #SBATCH --time=12:00:00
@@ -32,9 +32,12 @@ set -euo pipefail
 MODEL=qwen3_4b
 
 # Alliance Canada environment setup
-module load python/3.11
+if ! command -v module &>/dev/null; then
+    source /cvmfs/soft.computecanada.ca/config/profile/bash.sh 2>/dev/null || true
+fi
+module load python/3.11 gcc arrow
 source ~/dtr-env/bin/activate
-export HF_HOME="${PROJECT}/hf-cache"
+export HF_HOME="${SCRATCH:-$HOME}/hf-cache"
 
 echo "=== DTR Generation: Qwen3-4B ==="
 echo "Job ID:       ${SLURM_JOB_ID}"
@@ -65,7 +68,7 @@ CMD="python scripts/generate_responses.py \
     --n_samples ${N_SAMPLES:-25} \
     --seed ${SEED:-42} \
     --question_ids ${SLURM_ARRAY_TASK_ID} \
-    --output_dir ${OUTPUT_DIR:-${SCRATCH}/dtr-results/raw} \
+    --output_dir ${OUTPUT_DIR:-${SCRATCH:-$HOME}/dtr-results/raw} \
     --data_dir ${LOCAL_DATA}"
 
 if [[ "${STORE_JSD:-0}" == "1" ]]; then
