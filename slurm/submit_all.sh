@@ -87,7 +87,7 @@ while [[ $# -gt 0 ]]; do
             echo "  appendix_c   Think@n analysis: qwen3_4b x 4 benchmarks, n_samples=48"
             echo "  custom       Specify --models and --benchmarks manually"
             echo ""
-            echo "Cluster: Killarney (H100-80GB GPUs)"
+            echo "Cluster: Killarney (H100-80GB for 70B/30B, L40S-48GB for 4B)"
             echo "Environment: ~/dtr-env (run slurm/setup_env.sh first)"
             exit 0
             ;;
