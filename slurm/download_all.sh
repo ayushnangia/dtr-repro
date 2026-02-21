@@ -39,12 +39,12 @@ done
 if ! command -v module &>/dev/null; then
     source /cvmfs/soft.computecanada.ca/config/profile/bash.sh 2>/dev/null || true
 fi
-module load python/3.11
+module load python/3.11 gcc arrow
 source ~/dtr-env/bin/activate
 
 # Store model weights outside $HOME (50GB quota).
-# Prefer $PROJECT > $SCRATCH > $HOME/hf-cache
-export HF_HOME="${PROJECT:-${SCRATCH:-$HOME}}/hf-cache"
+# Prefer $SCRATCH > $PROJECT > $HOME/hf-cache
+export HF_HOME="${SCRATCH:-${PROJECT:-$HOME}}/hf-cache"
 mkdir -p "${HF_HOME}"
 
 echo "=== DTR: Downloading data and models ==="

@@ -51,18 +51,19 @@ def _normalize_aime_2024(output_dir: Path) -> None:
 def _normalize_aime_2025(output_dir: Path) -> None:
     """Download and normalize AIME 2025 from opencompass/AIME2025."""
     logger.info("Downloading AIME 2025 from opencompass/AIME2025 ...")
-    ds = load_dataset("opencompass/AIME2025", split="train")
-
+    # Dataset has two configs: AIME2025-I and AIME2025-II (15 problems each)
     records = []
-    for idx, row in enumerate(ds):
-        question = row.get("problem") or row.get("question", "")
-        answer = str(row.get("answer", ""))
-        records.append({
-            "id": idx,
-            "question": question.strip(),
-            "answer": answer.strip(),
-            "source": "aime_2025",
-        })
+    for config in ["AIME2025-I", "AIME2025-II"]:
+        ds = load_dataset("opencompass/AIME2025", config, split="test")
+        for row in ds:
+            question = row.get("problem") or row.get("question", "")
+            answer = str(row.get("answer", ""))
+            records.append({
+                "id": len(records),
+                "question": question.strip(),
+                "answer": answer.strip(),
+                "source": "aime_2025",
+            })
 
     _save(records, output_dir / "aime_2025.json")
     logger.info("AIME 2025: saved %d problems", len(records))
