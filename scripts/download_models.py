@@ -41,8 +41,8 @@ MODEL_INFO = {
         "description": "Qwen3-30B-A3B MoE (2x H100-80GB)",
     },
     "qwen3_4b": {
-        "hf_id": "Qwen/Qwen3-4B",
-        "description": "Qwen3-4B dense (1x L40S-48GB or H100)",
+        "hf_id": "Qwen/Qwen3-4B-Thinking-2507",
+        "description": "Qwen3-4B-Thinking-2507 dense (1x L40S-48GB or H100)",
     },
 }
 

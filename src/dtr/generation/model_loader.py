@@ -31,8 +31,8 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         "gpus_needed": 2,
     },
     "qwen3_4b": {
-        "hf_id": "Qwen/Qwen3-4B",
-        "local_path": "/model-weights/Qwen3-4B",
+        "hf_id": "Qwen/Qwen3-4B-Thinking-2507",
+        "local_path": "/model-weights/Qwen3-4B-Thinking-2507",
         "num_layers": 36,
         "hidden_dim": 2560,
         "is_moe": False,

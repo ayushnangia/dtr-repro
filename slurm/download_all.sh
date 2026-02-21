@@ -55,7 +55,7 @@ echo ""
 
 # Download benchmark data
 if [[ ${MODELS_ONLY} -eq 0 ]]; then
-    DATA_DIR="${PROJECT}/dtr-data"
+    DATA_DIR="${PROJECT:-$HOME}/dtr-data"
     echo "--- Downloading benchmarks to ${DATA_DIR} ---"
     python scripts/download_data.py --output_dir "${DATA_DIR}"
     echo ""

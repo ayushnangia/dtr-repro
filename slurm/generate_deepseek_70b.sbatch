@@ -55,7 +55,7 @@ echo "======================================================"
 nvidia-smi
 
 # Stage data to fast local storage
-DATA_SRC="${DATA_DIR:-$PROJECT/dtr-data}"
+DATA_SRC="${DATA_DIR:-${PROJECT:-$HOME}/dtr-data}"
 if [[ -d "${DATA_SRC}" ]]; then
     echo "Staging data to \$SLURM_TMPDIR..."
     cp -r "${DATA_SRC}" "${SLURM_TMPDIR}/data"
