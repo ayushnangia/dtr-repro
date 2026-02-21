@@ -3,14 +3,13 @@
 #SBATCH --output=slurm/logs/%A_%a.out
 #SBATCH --error=slurm/logs/%A_%a.err
 #SBATCH --array=0-29
-#SBATCH --partition=gpubase_h100_b3
-#SBATCH --gres=gpu:h100:2
+#SBATCH --gpus-per-node=h100:2
 #SBATCH --mem=160G
 #SBATCH --cpus-per-task=8
 #SBATCH --time=24:00:00
 #SBATCH --mail-type=END,FAIL
 #
-# Qwen3-30B-A3B (MoE) generation job for Killarney.
+# Qwen3-30B-A3B (MoE) generation job for Fir.
 # Requires 2x H100-80GB GPUs for the MoE model (~3B active parameters).
 #
 # Required environment variables:

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Set up the DTR virtualenv on Alliance Canada clusters (Killarney, etc.)
+# Set up the DTR virtualenv on Alliance Canada clusters (Fir, etc.)
 #
 # Run ONCE from a login node:
 #   bash slurm/setup_env.sh

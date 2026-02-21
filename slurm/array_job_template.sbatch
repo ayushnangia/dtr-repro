@@ -6,12 +6,13 @@
 #SBATCH --time=24:00:00
 #SBATCH --mail-type=END,FAIL
 #
-# Generic SLURM array job template for DTR response generation on Killarney.
+# Generic SLURM array job template for DTR response generation on Fir.
 #
 # GPU and memory requirements should be set per-model when submitting:
-#   --gpus-per-node=h100:N  (1 for 4B, 2 for 30B, 4 for 70B)
-#   --mem=NNG               (40G for 4B, 160G for 30B, 320G for 70B)
-#   --cpus-per-task=N       (6 for 4B, 8 for 30B, 16 for 70B)
+#   --gpus-per-node=h100:N                            (2 for 30B, 4 for 70B)
+#   --gpus-per-node=nvidia_h100_80gb_hbm3_2g.20gb:1  (MIG for 4B)
+#   --mem=NNG                                         (20G for 4B MIG, 160G for 30B, 320G for 70B)
+#   --cpus-per-task=N                                 (4 for 4B MIG, 8 for 30B, 16 for 70B)
 #
 # Or use the model-specific .sbatch files instead.
 #
@@ -27,7 +28,7 @@
 #   STORE_JSD   - Set to 1 to save JSD matrices (default: 0)
 #
 # Usage:
-#   MODEL=qwen3_4b BENCHMARK=aime_2025 sbatch --gpus-per-node=h100:1 --mem=40G --cpus-per-task=6 slurm/array_job_template.sbatch
+#   MODEL=qwen3_4b BENCHMARK=aime_2025 sbatch --gpus-per-node=nvidia_h100_80gb_hbm3_2g.20gb:1 --mem=20G --cpus-per-task=4 slurm/array_job_template.sbatch
 
 set -euo pipefail
 

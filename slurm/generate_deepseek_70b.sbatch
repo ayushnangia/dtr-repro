@@ -3,14 +3,13 @@
 #SBATCH --output=slurm/logs/%A_%a.out
 #SBATCH --error=slurm/logs/%A_%a.err
 #SBATCH --array=0-29
-#SBATCH --partition=gpubase_h100_b4
-#SBATCH --gres=gpu:h100:4
+#SBATCH --gpus-per-node=h100:4
 #SBATCH --mem=320G
 #SBATCH --cpus-per-task=16
 #SBATCH --time=48:00:00
 #SBATCH --mail-type=END,FAIL
 #
-# DeepSeek-R1-Distill-Llama-70B generation job for Killarney.
+# DeepSeek-R1-Distill-Llama-70B generation job for Fir.
 # Requires 4x H100-80GB GPUs for the 70B dense model.
 #
 # Required environment variables:
