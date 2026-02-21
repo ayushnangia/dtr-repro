@@ -4,7 +4,7 @@
 #SBATCH --error=slurm/logs/%A_%a.err
 #SBATCH --array=0-29
 #SBATCH --gpus-per-node=nvidia_h100_80gb_hbm3_2g.20gb:1
-#SBATCH --mem=20G
+#SBATCH --mem=48G
 #SBATCH --cpus-per-task=4
 #SBATCH --time=3:00:00
 #SBATCH --mail-type=END,FAIL

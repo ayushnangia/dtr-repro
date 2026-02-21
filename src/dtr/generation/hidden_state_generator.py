@@ -315,6 +315,7 @@ class PostHocAnalyzer:
         threshold_g: float = 0.5,
         depth_ratio_rho: float = 0.85,
         use_cpu_dtr: bool = False,
+        compute_log_probs: bool = False,
     ) -> dict:
         """Run a forward pass on the concatenated sequence and compute DTR.
 
@@ -332,12 +333,18 @@ class PostHocAnalyzer:
             If ``True``, use a CPU copy of the final layer norm for DTR
             computation.  This avoids moving hidden states back to GPU and
             keeps the GPU free for the next generation.
+        compute_log_probs:
+            If ``True``, also compute per-token log-probabilities and
+            entropies from the final layer's hidden states.  The result
+            dict will include ``log_probs`` and ``entropies`` lists.
 
         Returns
         -------
         dict
             Dictionary with keys: ``dtr``, ``settling_depths``,
             ``deep_thinking_mask``, ``jsd_matrix`` (``(gen_len, num_layers)``).
+            When *compute_log_probs* is True, also ``log_probs`` and
+            ``entropies``.
         """
         model = self.loaded_model.model
         num_layers = self.loaded_model.num_layers
@@ -390,12 +397,38 @@ class PostHocAnalyzer:
         results = accumulator.get_results()
         jsd_matrix = torch.stack(jsd_rows, dim=0) if jsd_rows else None  # (gen_len, num_layers)
 
-        return {
+        output = {
             "dtr": results["dtr"],
             "settling_depths": results["settling_depths"],
             "deep_thinking_mask": results["deep_thinking_mask"],
             "jsd_matrix": jsd_matrix,
         }
+
+        # Compute log-probs and entropies from the final layer hidden states.
+        # Hidden state at position p predicts token at position p+1, so for
+        # generated_ids[t] (at position prompt_len+t) we need the hidden state
+        # at position prompt_len+t-1.
+        if compute_log_probs:
+            lm_head_weight = self.loaded_model.lm_head_weight  # (vocab, hidden) on CPU
+            # Final layer hidden states at prediction positions
+            final_layer_hs = all_hidden_states[-1]  # (total_len, hidden_dim) on CPU
+            pred_hs = final_layer_hs[prompt_len - 1 : prompt_len + gen_len - 1]  # (gen_len, hidden_dim)
+            normed = torch.stack([layer_norm(pred_hs[t]) for t in range(gen_len)])
+            logits = normed @ lm_head_weight.t()  # (gen_len, vocab_size)
+            log_prob_dist = torch.log_softmax(logits, dim=-1)
+            prob_dist = torch.softmax(logits, dim=-1)
+
+            log_probs: list[float] = []
+            entropies: list[float] = []
+            for t in range(gen_len):
+                token_id = generated_ids[t].item()
+                log_probs.append(log_prob_dist[t, token_id].item())
+                entropies.append(-(prob_dist[t] * log_prob_dist[t]).sum().item())
+
+            output["log_probs"] = log_probs
+            output["entropies"] = entropies
+
+        return output
 
     def _forward_chunked(
         self,
@@ -572,7 +605,6 @@ class PostHocGenerator:
             do_sample=True,
             temperature=self.temperature,
             top_p=self.top_p,
-            output_logits=True,
             return_dict_in_generate=True,
         )
 
@@ -581,22 +613,6 @@ class PostHocGenerator:
         # Extract generated token ids (exclude prompt)
         full_sequence = gen_output.sequences[0]  # (prompt_len + gen_len,)
         generated_ids = full_sequence[prompt_len:].tolist()
-
-        # Extract log-probs and entropies from raw (unprocessed) logits,
-        # matching what streaming mode computes from outputs.logits.
-        log_probs: list[float] = []
-        entropies: list[float] = []
-        for step_logits in gen_output.logits:
-            # step_logits: (batch=1, vocab_size) — raw model logits
-            logits = step_logits[0].float().cpu()
-            log_prob_dist = torch.log_softmax(logits, dim=-1)
-            prob_dist = torch.softmax(logits, dim=-1)
-            entropy = -(prob_dist * log_prob_dist).sum().item()
-            # Log-prob of the token that was actually sampled
-            token_id = generated_ids[len(log_probs)]
-            log_probs.append(log_prob_dist[token_id].item())
-            entropies.append(entropy)
-
         num_gen = len(generated_ids)
         gen_tok_per_sec = num_gen / _gen_elapsed if _gen_elapsed > 0 else 0
         logger.info(
@@ -608,7 +624,7 @@ class PostHocGenerator:
         del gen_output
         torch.cuda.empty_cache() if torch.cuda.is_available() else None
 
-        # ----- Phase 2: Post-hoc DTR computation ----- #
+        # ----- Phase 2: Post-hoc DTR + log-probs computation ----- #
         _dtr_start = time.monotonic()
 
         analyzer = PostHocAnalyzer(self.loaded_model, chunk_size=self.chunk_size)
@@ -618,17 +634,20 @@ class PostHocGenerator:
             threshold_g=self.threshold_g,
             depth_ratio_rho=self.depth_ratio_rho,
             use_cpu_dtr=True,
+            compute_log_probs=True,
         )
 
         _dtr_elapsed = time.monotonic() - _dtr_start
         logger.info(
-            "PostHoc phase 2 (DTR): %.1fs for %d tokens",
+            "PostHoc phase 2 (DTR + log-probs): %.1fs for %d tokens",
             _dtr_elapsed, num_gen,
         )
 
         # ----- Assemble result ----- #
         text = tokenizer.decode(generated_ids, skip_special_tokens=True)
 
+        log_probs = dtr_results["log_probs"]
+        entropies = dtr_results["entropies"]
         metrics: dict = {
             "dtr": dtr_results["dtr"],
             "settling_depths": dtr_results["settling_depths"],
