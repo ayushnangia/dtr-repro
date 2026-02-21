@@ -233,7 +233,7 @@ def load_model(
         "Loading tokenizer for %s (path=%s, source=%s)...",
         model_name, model_path, "local" if model_path == local_path else "hub",
     )
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
 
     # Ensure pad token is set (many models lack one)
     if tokenizer.pad_token is None:
@@ -249,6 +249,7 @@ def load_model(
         torch_dtype=dtype,
         device_map=device_map,
         trust_remote_code=True,
+        local_files_only=True,
         attn_implementation="flash_attention_2" if dtype in (torch.float16, torch.bfloat16) else None,
     )
     model.eval()

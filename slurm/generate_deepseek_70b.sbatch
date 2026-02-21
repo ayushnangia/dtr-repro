@@ -37,6 +37,9 @@ fi
 module load python/3.11 gcc arrow
 source ~/dtr-env/bin/activate
 export HF_HOME="${SCRATCH:-$HOME}/hf-cache"
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
 
 echo "=== DTR Generation: DeepSeek-R1-Distill-Llama-70B ==="
 echo "Job ID:       ${SLURM_JOB_ID}"

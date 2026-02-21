@@ -6,7 +6,7 @@
 #SBATCH --gpus-per-node=nvidia_h100_80gb_hbm3_2g.20gb:1
 #SBATCH --mem=20G
 #SBATCH --cpus-per-task=4
-#SBATCH --time=12:00:00
+#SBATCH --time=3:00:00
 #SBATCH --mail-type=END,FAIL
 #
 # Qwen3-4B generation job for Fir.
@@ -38,6 +38,9 @@ fi
 module load python/3.11 gcc arrow
 source ~/dtr-env/bin/activate
 export HF_HOME="${SCRATCH:-$HOME}/hf-cache"
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
 
 echo "=== DTR Generation: Qwen3-4B ==="
 echo "Job ID:       ${SLURM_JOB_ID}"
