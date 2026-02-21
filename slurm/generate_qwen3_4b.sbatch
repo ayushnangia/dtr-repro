@@ -9,7 +9,7 @@
 #SBATCH --time=3:00:00
 #SBATCH --mail-type=END,FAIL
 #
-# Qwen3-4B generation job for Fir.
+# Qwen3-4B-Thinking-2507 generation job for Fir.
 # Uses 1x H100 MIG 2g.20gb instance (4B model only needs ~12GB VRAM).
 # MIG shares an H100 so queue times are shorter and resources are used efficiently.
 #
@@ -43,7 +43,7 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 
-echo "=== DTR Generation: Qwen3-4B ==="
+echo "=== DTR Generation: Qwen3-4B-Thinking-2507 ==="
 echo "Job ID:       ${SLURM_JOB_ID}"
 echo "Array Task:   ${SLURM_ARRAY_TASK_ID}"
 echo "Node:         $(hostname)"

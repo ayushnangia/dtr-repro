@@ -41,8 +41,8 @@ MODEL_INFO = {
         "description": "Qwen3-30B-A3B MoE (2x H100-80GB)",
     },
     "qwen3_4b": {
-        "hf_id": "Qwen/Qwen3-4B",
-        "description": "Qwen3-4B dense (1x L40S-48GB or H100)",
+        "hf_id": "Qwen/Qwen3-4B-Thinking-2507",
+        "description": "Qwen3-4B-Thinking-2507 dense (1x L40S-48GB or H100)",
     },
 }
 
@@ -55,7 +55,7 @@ def parse_args() -> argparse.Namespace:
 Available models:
   deepseek_r1_70b   DeepSeek-R1-Distill-Llama-70B  (4x H100-80GB)
   qwen3_30b         Qwen3-30B-A3B MoE              (2x H100-80GB)
-  qwen3_4b          Qwen3-4B dense                  (1x L40S-48GB or H100)
+  qwen3_4b          Qwen3-4B-Thinking-2507 dense    (1x L40S-48GB or H100)
 
 Examples:
   python scripts/download_models.py --models deepseek_r1_70b,qwen3_30b,qwen3_4b
