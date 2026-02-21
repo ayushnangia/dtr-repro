@@ -39,8 +39,20 @@ done
 if ! command -v module &>/dev/null; then
     source /cvmfs/soft.computecanada.ca/config/profile/bash.sh 2>/dev/null || true
 fi
-module load python/3.11
+module load python/3.11 git-lfs/3.4.0
 source ~/dtr-env/bin/activate
+
+# Load HF token for gated model access (e.g. from ~/.env)
+if [[ -f ~/.env ]]; then
+    source ~/.env 2>/dev/null || true
+fi
+if [[ -n "${HF_TOKEN:-}" ]]; then
+    export HF_TOKEN
+    echo "HF_TOKEN loaded for gated model access."
+fi
+
+# Disable xet transport (avoids hf_xet dependency issues on clusters)
+export HF_HUB_DISABLE_XET=1
 
 # Store model weights outside $HOME (50GB quota).
 # Prefer $PROJECT > $SCRATCH > $HOME/hf-cache

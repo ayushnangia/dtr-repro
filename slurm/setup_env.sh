@@ -33,9 +33,9 @@ pip install --no-index 'torch>=2.5.1' torchvision torchaudio
 pip install --no-index transformers datasets tokenizers accelerate
 pip install --no-index numpy scipy pandas scikit-learn
 
-# Try Alliance wheels first, fall back to PyPI for packages without wheels
+# Try Alliance wheels first, fall back to PyPI for packages without pre-built wheels
 pip install --no-index matplotlib seaborn tqdm 2>/dev/null || pip install matplotlib seaborn tqdm
-pip install rich hydra-core omegaconf
+pip install --no-index rich hydra-core omegaconf 2>/dev/null || pip install rich hydra-core omegaconf
 
 echo ""
 echo "=== Verifying installation ==="

@@ -39,6 +39,11 @@ module load python/3.11 gcc arrow
 source ~/dtr-env/bin/activate
 export HF_HOME="${SCRATCH:-$HOME}/hf-cache"
 
+# Offline mode: compute nodes have no internet
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+
 echo "=== DTR Generation: Qwen3-4B ==="
 echo "Job ID:       ${SLURM_JOB_ID}"
 echo "Array Task:   ${SLURM_ARRAY_TASK_ID}"
