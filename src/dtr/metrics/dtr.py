@@ -54,11 +54,13 @@ def compute_jsd_per_layer(
         Shape ``(num_layers,)`` of JSD values.
     """
     num_layers = hidden_states.size(0)
+    device = hidden_states.device
 
     # 1. Normalise all layers using the final layer norm.
     normed = torch.stack([layer_norm(hidden_states[i]) for i in range(num_layers)])
 
-    # 2. Project to vocabulary space.
+    # 2. Project to vocabulary space (ensure lm_head_weight is on the same device).
+    lm_head_weight = lm_head_weight.to(device)
     logits = normed @ lm_head_weight.t()  # (num_layers, vocab_size)
 
     # 3. Softmax -> probability distributions.

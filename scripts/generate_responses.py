@@ -23,7 +23,7 @@ from dtr.data.loaders import load_benchmark
 from dtr.data.prompts import format_prompt
 from dtr.data.answer_extraction import extract_answer, check_correct
 from dtr.generation.model_loader import load_model
-from dtr.generation.hidden_state_generator import HiddenStateGenerator
+from dtr.generation.hidden_state_generator import HiddenStateGenerator, PostHocGenerator
 from dtr.utils.seeding import make_sample_seed
 from dtr.utils.io import save_json, save_jsonl
 from dtr.utils.logging import setup_logging
@@ -44,6 +44,8 @@ def parse_args():
     parser.add_argument("--store_jsd_matrix", action="store_true", help="Save full JSD matrix for sensitivity analysis")
     parser.add_argument("--threshold_g", type=float, default=0.5)
     parser.add_argument("--depth_ratio_rho", type=float, default=0.85)
+    parser.add_argument("--mode", choices=["streaming", "posthoc"], default="streaming",
+                        help="Generation mode: streaming (per-token DTR) or posthoc (fast generate then DTR)")
     return parser.parse_args()
 
 
@@ -64,7 +66,7 @@ def main():
     if question_ids is not None:
         questions = [q for q in questions if q["id"] in question_ids]
 
-    logger.info(f"Processing {len(questions)} questions, {args.n_samples} samples each")
+    logger.info(f"Processing {len(questions)} questions, {args.n_samples} samples each (mode={args.mode})")
 
     # Load model
     loaded_model = load_model(args.model)
@@ -81,9 +83,14 @@ def main():
         input_ids = tokenizer.encode(prompt_text, return_tensors="pt").to(loaded_model.device)
 
         for sample_idx in range(args.n_samples):
+            logger.info(
+                "Question %d, sample %d/%d starting...",
+                question["id"], sample_idx + 1, args.n_samples,
+            )
             seed = make_sample_seed(args.seed, question["id"], sample_idx)
 
-            generator = HiddenStateGenerator(
+            GeneratorClass = PostHocGenerator if args.mode == "posthoc" else HiddenStateGenerator
+            generator = GeneratorClass(
                 loaded_model,
                 max_new_tokens=args.max_new_tokens,
                 temperature=args.temperature,
@@ -100,10 +107,18 @@ def main():
             predicted = extract_answer(result.text, args.benchmark)
             correct = check_correct(predicted, question["answer"], args.benchmark)
 
+            logger.info(
+                "Question %d, sample %d/%d done: %d tokens, DTR=%.4f, correct=%s, answer=%s",
+                question["id"], sample_idx + 1, args.n_samples,
+                len(result.token_ids), result.metrics["dtr"],
+                correct, predicted,
+            )
+
             record = {
                 "question_id": question["id"],
                 "sample_id": sample_idx,
                 "seed": seed,
+                "mode": args.mode,
                 "text": result.text,
                 "answer_predicted": predicted,
                 "answer_gold": question["answer"],

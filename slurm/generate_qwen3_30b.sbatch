@@ -21,6 +21,7 @@
 #   OUTPUT_DIR  - Output directory (default: $SCRATCH/dtr-results/raw)
 #   DATA_DIR    - Data cache directory (default: $PROJECT/dtr-data)
 #   STORE_JSD   - Set to 1 to save JSD matrices (default: 0)
+#   MODE        - Generation mode: streaming or posthoc (default: streaming)
 #
 # Usage:
 #   BENCHMARK=aime_2025 sbatch slurm/generate_qwen3_30b.sbatch
@@ -49,12 +50,13 @@ echo "GPUs:         ${CUDA_VISIBLE_DEVICES:-none}"
 echo "Benchmark:    ${BENCHMARK}"
 echo "N Samples:    ${N_SAMPLES:-25}"
 echo "Seed:         ${SEED:-42}"
+echo "Mode:         ${MODE:-streaming}"
 echo "=============================================="
 
 nvidia-smi
 
 # Stage data to fast local storage
-DATA_SRC="${DATA_DIR:-$PROJECT/dtr-data}"
+DATA_SRC="${DATA_DIR:-${SCRATCH}/dtr-data}"
 if [[ -d "${DATA_SRC}" ]]; then
     echo "Staging data to \$SLURM_TMPDIR..."
     cp -r "${DATA_SRC}" "${SLURM_TMPDIR}/data"
@@ -71,7 +73,8 @@ CMD="python scripts/generate_responses.py \
     --seed ${SEED:-42} \
     --question_ids ${SLURM_ARRAY_TASK_ID} \
     --output_dir ${OUTPUT_DIR:-${SCRATCH:-$HOME}/dtr-results/raw} \
-    --data_dir ${LOCAL_DATA}"
+    --data_dir ${LOCAL_DATA} \
+    --mode ${MODE:-streaming}"
 
 if [[ "${STORE_JSD:-0}" == "1" ]]; then
     CMD="${CMD} --store_jsd_matrix"

@@ -88,6 +88,19 @@ class LoadedModel:
         self.lm_head_weight = lm_head_weight  # (vocab_size, hidden_dim)
         self.final_layer_norm = final_layer_norm  # callable
         self.config = config
+        self._cpu_final_layer_norm = None
+
+    @property
+    def cpu_final_layer_norm(self):
+        """Lazily create a CPU float32 copy of the final layer norm.
+
+        Used by :class:`PostHocGenerator` so that DTR computation runs
+        entirely on CPU while the GPU is free for the next generation.
+        """
+        if self._cpu_final_layer_norm is None:
+            import copy
+            self._cpu_final_layer_norm = copy.deepcopy(self.final_layer_norm).to("cpu").float()
+        return self._cpu_final_layer_norm
 
     @property
     def num_layers(self) -> int:
@@ -246,7 +259,7 @@ def load_model(
     )
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        torch_dtype=dtype,
+        dtype=dtype,
         device_map=device_map,
         trust_remote_code=True,
         local_files_only=True,

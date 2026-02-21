@@ -9,6 +9,7 @@ Provides two approaches:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 
 import torch
@@ -163,6 +164,9 @@ class HiddenStateGenerator:
         cur_input_ids = input_ids
         cur_attention_mask = attention_mask
 
+        _gen_start = time.monotonic()
+        _log_interval = 100  # log every N tokens
+
         for step in range(self.max_new_tokens):
             # Forward pass with hidden states and KV cache
             outputs = model(
@@ -180,12 +184,12 @@ class HiddenStateGenerator:
             # transformer layer outputs.  We want layers 1..num_layers.
             hidden_states_tuple = outputs.hidden_states
 
-            # Stack layer outputs for the last position and move to CPU
+            # Stack layer outputs for the last position (keep on GPU for DTR computation)
             # Shape: (num_layers, hidden_dim)
             per_layer_hs = torch.stack(
                 [hidden_states_tuple[i + 1][:, -1, :].squeeze(0) for i in range(num_layers)],
                 dim=0,
-            ).cpu().float()
+            ).float()
 
             # Feed to DTR accumulator (incremental JSD + settling)
             token_metrics = accumulator.add_token(per_layer_hs)
@@ -211,6 +215,16 @@ class HiddenStateGenerator:
             log_probs.append(log_prob_dist[next_token].item())
             entropies.append(entropy)
             generated_ids.append(next_token)
+
+            # --- Periodic progress logging ---
+            if (step + 1) % _log_interval == 0:
+                elapsed = time.monotonic() - _gen_start
+                tok_per_sec = (step + 1) / elapsed
+                logger.info(
+                    "  token %d | %.1f tok/s | settling_depth=%d | is_deep=%s",
+                    step + 1, tok_per_sec,
+                    token_metrics["settling_depth"], token_metrics["is_deep"],
+                )
 
             # --- Clean up GPU tensors we no longer need ---
             del hidden_states_tuple, per_layer_hs, logits, outputs
@@ -300,6 +314,7 @@ class PostHocAnalyzer:
         generated_ids: torch.Tensor,
         threshold_g: float = 0.5,
         depth_ratio_rho: float = 0.85,
+        use_cpu_dtr: bool = False,
     ) -> dict:
         """Run a forward pass on the concatenated sequence and compute DTR.
 
@@ -313,6 +328,10 @@ class PostHocAnalyzer:
             JSD threshold for deep-thinking classification.
         depth_ratio_rho:
             Depth-ratio cutoff for settling-depth computation.
+        use_cpu_dtr:
+            If ``True``, use a CPU copy of the final layer norm for DTR
+            computation.  This avoids moving hidden states back to GPU and
+            keeps the GPU free for the next generation.
 
         Returns
         -------
@@ -349,10 +368,14 @@ class PostHocAnalyzer:
         )  # (gen_len, num_layers, hidden_dim)
 
         # Build DTR accumulator and process each token
+        layer_norm = (
+            self.loaded_model.cpu_final_layer_norm if use_cpu_dtr
+            else self.loaded_model.final_layer_norm
+        )
         accumulator = DTRAccumulator(
             num_layers=num_layers,
             lm_head_weight=self.loaded_model.lm_head_weight,
-            layer_norm=self.loaded_model.final_layer_norm,
+            layer_norm=layer_norm,
             threshold_g=threshold_g,
             depth_ratio_rho=depth_ratio_rho,
         )
@@ -445,3 +468,188 @@ class PostHocAnalyzer:
         # Concatenate chunks per layer
         result = [torch.cat(chunks, dim=0) for chunks in layer_chunks]
         return result
+
+
+# ---------------------------------------------------------------------------
+# Post-hoc generation: fast generate then single forward pass for DTR
+# ---------------------------------------------------------------------------
+
+class PostHocGenerator:
+    """Generate tokens at full speed via ``model.generate()``, then compute DTR
+    from a single post-hoc forward pass with hidden states offloaded to CPU.
+
+    This trades exact per-token streaming metrics for significantly higher
+    throughput on memory-constrained devices (e.g. MIG slices).
+
+    Parameters
+    ----------
+    loaded_model:
+        A :class:`~dtr.generation.model_loader.LoadedModel` instance.
+    max_new_tokens:
+        Maximum number of tokens to generate.
+    temperature:
+        Sampling temperature.
+    top_p:
+        Nucleus sampling threshold.
+    seed:
+        Random seed for reproducibility.  Applied as a *global*
+        ``torch.manual_seed`` (unlike ``HiddenStateGenerator`` which uses a
+        per-Generator ``torch.Generator``), so token sequences will differ
+        between modes even with the same seed value.
+    threshold_g:
+        JSD threshold *g* passed to :class:`DTRAccumulator`.
+    depth_ratio_rho:
+        Depth-ratio cutoff *rho* passed to :class:`DTRAccumulator`.
+    store_jsd_matrix:
+        If ``True``, keep the full ``(T, L)`` JSD matrix in the result.
+    chunk_size:
+        Maximum tokens per forward-pass chunk in the post-hoc analysis.
+    """
+
+    def __init__(
+        self,
+        loaded_model: LoadedModel,
+        max_new_tokens: int = 32768,
+        temperature: float = 0.6,
+        top_p: float = 0.95,
+        seed: int | None = None,
+        threshold_g: float = 0.5,
+        depth_ratio_rho: float = 0.85,
+        store_jsd_matrix: bool = False,
+        chunk_size: int = 2048,
+    ) -> None:
+        self.loaded_model = loaded_model
+        self.max_new_tokens = max_new_tokens
+        self.temperature = temperature
+        self.top_p = top_p
+        self.seed = seed
+        self.threshold_g = threshold_g
+        self.depth_ratio_rho = depth_ratio_rho
+        self.store_jsd_matrix = store_jsd_matrix
+        self.chunk_size = chunk_size
+
+    @torch.no_grad()
+    def generate(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor | None = None,
+    ) -> GenerationResult:
+        """Generate tokens with ``model.generate()`` then compute DTR post-hoc.
+
+        Parameters
+        ----------
+        input_ids:
+            Prompt token ids, shape ``(1, seq_len)``.
+        attention_mask:
+            Optional attention mask, shape ``(1, seq_len)``.
+
+        Returns
+        -------
+        GenerationResult
+            Generated tokens, decoded text, and all DTR metrics.
+        """
+        model = self.loaded_model.model
+        tokenizer = self.loaded_model.tokenizer
+        device = self.loaded_model.device
+
+        # Move inputs to model device
+        input_ids = input_ids.to(device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(device)
+
+        prompt_len = input_ids.shape[1]
+
+        # ----- Phase 1: Fast generation via model.generate() ----- #
+        if self.seed is not None:
+            torch.manual_seed(self.seed)
+
+        _gen_start = time.monotonic()
+
+        gen_output = model.generate(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_new_tokens=self.max_new_tokens,
+            do_sample=True,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            output_logits=True,
+            return_dict_in_generate=True,
+        )
+
+        _gen_elapsed = time.monotonic() - _gen_start
+
+        # Extract generated token ids (exclude prompt)
+        full_sequence = gen_output.sequences[0]  # (prompt_len + gen_len,)
+        generated_ids = full_sequence[prompt_len:].tolist()
+
+        # Extract log-probs and entropies from raw (unprocessed) logits,
+        # matching what streaming mode computes from outputs.logits.
+        log_probs: list[float] = []
+        entropies: list[float] = []
+        for step_logits in gen_output.logits:
+            # step_logits: (batch=1, vocab_size) — raw model logits
+            logits = step_logits[0].float().cpu()
+            log_prob_dist = torch.log_softmax(logits, dim=-1)
+            prob_dist = torch.softmax(logits, dim=-1)
+            entropy = -(prob_dist * log_prob_dist).sum().item()
+            # Log-prob of the token that was actually sampled
+            token_id = generated_ids[len(log_probs)]
+            log_probs.append(log_prob_dist[token_id].item())
+            entropies.append(entropy)
+
+        num_gen = len(generated_ids)
+        gen_tok_per_sec = num_gen / _gen_elapsed if _gen_elapsed > 0 else 0
+        logger.info(
+            "PostHoc phase 1 (generate): %d tokens in %.1fs (%.1f tok/s)",
+            num_gen, _gen_elapsed, gen_tok_per_sec,
+        )
+
+        # Free generation output to reclaim GPU memory before forward pass
+        del gen_output
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+
+        # ----- Phase 2: Post-hoc DTR computation ----- #
+        _dtr_start = time.monotonic()
+
+        analyzer = PostHocAnalyzer(self.loaded_model, chunk_size=self.chunk_size)
+        dtr_results = analyzer.analyze(
+            input_ids=input_ids.squeeze(0).cpu(),
+            generated_ids=torch.tensor(generated_ids, dtype=torch.long),
+            threshold_g=self.threshold_g,
+            depth_ratio_rho=self.depth_ratio_rho,
+            use_cpu_dtr=True,
+        )
+
+        _dtr_elapsed = time.monotonic() - _dtr_start
+        logger.info(
+            "PostHoc phase 2 (DTR): %.1fs for %d tokens",
+            _dtr_elapsed, num_gen,
+        )
+
+        # ----- Assemble result ----- #
+        text = tokenizer.decode(generated_ids, skip_special_tokens=True)
+
+        metrics: dict = {
+            "dtr": dtr_results["dtr"],
+            "settling_depths": dtr_results["settling_depths"],
+            "deep_thinking_mask": dtr_results["deep_thinking_mask"],
+            "mean_log_prob": sum(log_probs) / len(log_probs) if log_probs else 0.0,
+            "mean_entropy": sum(entropies) / len(entropies) if entropies else 0.0,
+            "num_generated_tokens": num_gen,
+            "log_probs": log_probs,
+            "entropies": entropies,
+        }
+
+        jsd_matrix = dtr_results["jsd_matrix"] if self.store_jsd_matrix else None
+
+        logger.info(
+            "PostHoc generation complete: %d tokens, DTR=%.4f (gen=%.1fs, dtr=%.1fs)",
+            num_gen, metrics["dtr"], _gen_elapsed, _dtr_elapsed,
+        )
+
+        return GenerationResult(
+            token_ids=generated_ids,
+            text=text,
+            metrics=metrics,
+            jsd_matrix=jsd_matrix,
+        )

@@ -29,7 +29,7 @@ source ~/dtr-env/bin/activate
 pip install --no-index --upgrade pip
 
 # Core ML packages (Alliance pre-built wheels, optimized for cluster CUDA)
-pip install --no-index 'torch>=2.5.1' torchvision torchaudio
+pip install --no-index 'torch~=2.9.0' torchvision torchaudio 'flash_attn>=2.5'
 pip install --no-index transformers datasets tokenizers accelerate
 pip install --no-index numpy scipy pandas scikit-learn
 
