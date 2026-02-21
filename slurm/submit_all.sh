@@ -1,5 +1,5 @@
 #!/bin/bash
-# Submit SLURM jobs for DTR experiments on Alliance Canada Killarney.
+# Submit SLURM jobs for DTR experiments on Alliance Canada Trillium.
 #
 # IMPORTANT: Before first use, replace 'your-account' with your actual
 # allocation account in all .sbatch files, or set the ACCOUNT env var:
@@ -66,7 +66,7 @@ while [[ $# -gt 0 ]]; do
         --help|-h)
             echo "Usage: $0 --experiment EXPERIMENT [OPTIONS]"
             echo ""
-            echo "Submit DTR generation jobs on Alliance Canada Killarney (H100 GPUs)."
+            echo "Submit DTR generation jobs on Alliance Canada Trillium (H100 GPUs)."
             echo ""
             echo "Options:"
             echo "  --experiment NAME    Experiment to run: table1, table2, table3, figure4, appendix_a, appendix_c, custom"
@@ -87,7 +87,7 @@ while [[ $# -gt 0 ]]; do
             echo "  appendix_c   Think@n analysis: qwen3_4b x 4 benchmarks, n_samples=48"
             echo "  custom       Specify --models and --benchmarks manually"
             echo ""
-            echo "Cluster: Killarney (H100-80GB for 70B/30B, L40S-48GB for 4B)"
+            echo "Cluster: Trillium (H100-80GB for all models, whole-node scheduling)"
             echo "Environment: ~/dtr-env (run slurm/setup_env.sh first)"
             exit 0
             ;;
@@ -203,7 +203,7 @@ case "${EXPERIMENT}" in
 esac
 
 echo "=============================================="
-echo "DTR Experiment Submission (Killarney H100)"
+echo "DTR Experiment Submission (Trillium H100)"
 echo "=============================================="
 echo "Experiment:  ${EXPERIMENT}"
 echo "Models:      ${MODELS}"

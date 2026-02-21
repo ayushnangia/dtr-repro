@@ -6,13 +6,13 @@
 #SBATCH --time=24:00:00
 #SBATCH --mail-type=END,FAIL
 #
-# Generic SLURM array job template for DTR response generation on Killarney.
+# Generic SLURM array job template for DTR response generation on Trillium.
 #
-# GPU and memory requirements should be set per-model when submitting:
+# Trillium uses whole-node scheduling. Only set GPU count per-model:
 #   --gpus-per-node=h100:N  (1 for 4B, 2 for 30B, 4 for 70B)
-#   --mem=NNG               (40G for 4B, 160G for 30B, 320G for 70B)
-#   --cpus-per-task=N       (6 for 4B, 8 for 30B, 16 for 70B)
+#   --nodes=1
 #
+# No --mem or --cpus-per-task needed (you get the full node: 96 cores, 749 GB RAM).
 # Or use the model-specific .sbatch files instead.
 #
 # Required environment variables:
@@ -27,7 +27,7 @@
 #   STORE_JSD   - Set to 1 to save JSD matrices (default: 0)
 #
 # Usage:
-#   MODEL=qwen3_4b BENCHMARK=aime_2025 sbatch --gpus-per-node=h100:1 --mem=40G --cpus-per-task=6 slurm/array_job_template.sbatch
+#   MODEL=qwen3_4b BENCHMARK=aime_2025 sbatch --gpus-per-node=h100:1 --nodes=1 slurm/array_job_template.sbatch
 
 set -euo pipefail
 

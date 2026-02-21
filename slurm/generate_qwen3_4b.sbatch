@@ -3,15 +3,15 @@
 #SBATCH --output=slurm/logs/%A_%a.out
 #SBATCH --error=slurm/logs/%A_%a.err
 #SBATCH --array=0-29
-#SBATCH --partition=gpubase_l40s_b2
-#SBATCH --gres=gpu:l40s:1
-#SBATCH --mem=40G
-#SBATCH --cpus-per-task=6
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=h100:1
 #SBATCH --time=12:00:00
 #SBATCH --mail-type=END,FAIL
 #
-# Qwen3-4B generation job for Killarney.
-# Uses 1x L40S-48GB (4B model only needs ~12GB VRAM, saves H100s for bigger models).
+# Qwen3-4B generation job for Trillium.
+# Uses 1x H100-80GB (Trillium has H100s only, no L40S).
+# Trillium uses whole-node scheduling: no --mem or --cpus-per-task needed
+# (you get the full node: 96 cores, 749 GB RAM).
 #
 # Required environment variables:
 #   BENCHMARK   - Benchmark name (aime_2024, aime_2025, hmmt_2025, gpqa_diamond)

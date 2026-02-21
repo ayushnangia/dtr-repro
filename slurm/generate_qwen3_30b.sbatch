@@ -3,15 +3,15 @@
 #SBATCH --output=slurm/logs/%A_%a.out
 #SBATCH --error=slurm/logs/%A_%a.err
 #SBATCH --array=0-29
-#SBATCH --partition=gpubase_h100_b3
-#SBATCH --gres=gpu:h100:2
-#SBATCH --mem=160G
-#SBATCH --cpus-per-task=8
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=h100:2
 #SBATCH --time=24:00:00
 #SBATCH --mail-type=END,FAIL
 #
-# Qwen3-30B-A3B (MoE) generation job for Killarney.
+# Qwen3-30B-A3B (MoE) generation job for Trillium.
 # Requires 2x H100-80GB GPUs for the MoE model (~3B active parameters).
+# Trillium uses whole-node scheduling: no --mem or --cpus-per-task needed
+# (you get the full node: 96 cores, 749 GB RAM).
 #
 # Required environment variables:
 #   BENCHMARK   - Benchmark name (aime_2024, aime_2025, hmmt_2025, gpqa_diamond)
