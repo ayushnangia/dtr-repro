@@ -10,6 +10,15 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 logger = logging.getLogger(__name__)
 
+
+def _has_flash_attn() -> bool:
+    try:
+        import flash_attn  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Model registry with architecture configs
 # ---------------------------------------------------------------------------
@@ -250,7 +259,7 @@ def load_model(
         device_map=device_map,
         trust_remote_code=True,
         local_files_only=True,
-        attn_implementation="flash_attention_2" if dtype in (torch.float16, torch.bfloat16) else None,
+        attn_implementation="flash_attention_2" if dtype in (torch.float16, torch.bfloat16) and _has_flash_attn() else None,
     )
     model.eval()
 

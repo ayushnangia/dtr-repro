@@ -62,9 +62,18 @@ def compute_jsd_per_layer(
         Shape ``(num_layers,)`` of JSD values.
     """
     num_layers = hidden_states.size(0)
+    device = hidden_states.device
+
+    lm_head_weight = lm_head_weight.to(device)
 
     # 1. Normalise all layers using the final layer norm.
-    normed = torch.stack([layer_norm(hidden_states[i]) for i in range(num_layers)])
+    #    Move hidden states to the norm's device, apply, then move back.
+    #    This avoids issues with device_map="auto" dispatch hooks.
+    norm_device = next(layer_norm.parameters()).device if hasattr(layer_norm, "parameters") else device
+    normed = torch.stack([
+        layer_norm(hidden_states[i].to(norm_device)).to(device)
+        for i in range(num_layers)
+    ])
 
     # 2. Project to vocabulary space.
     logits = normed @ lm_head_weight.t()  # (num_layers, vocab_size)
