@@ -44,6 +44,10 @@ def parse_args():
     parser.add_argument("--store_jsd_matrix", action="store_true", help="Save full JSD matrix for sensitivity analysis")
     parser.add_argument("--threshold_g", type=float, default=0.5)
     parser.add_argument("--depth_ratio_rho", type=float, default=0.85)
+    parser.add_argument("--method", default="jsd",
+                        choices=["jsd", "svd_jsd", "cosine", "norm_weighted_cosine",
+                                 "kld", "reverse_kld", "wasserstein"],
+                        help="Distance metric for DTR computation")
     return parser.parse_args()
 
 
@@ -92,6 +96,7 @@ def main():
                 threshold_g=args.threshold_g,
                 depth_ratio_rho=args.depth_ratio_rho,
                 store_jsd_matrix=args.store_jsd_matrix,
+                method=args.method,
             )
 
             result = generator.generate(input_ids)
@@ -104,6 +109,7 @@ def main():
                 "question_id": question["id"],
                 "sample_id": sample_idx,
                 "seed": seed,
+                "method": args.method,
                 "text": result.text,
                 "answer_predicted": predicted,
                 "answer_gold": question["answer"],
@@ -121,8 +127,9 @@ def main():
 
             question_results.append(record)
 
-        # Save per-question results
-        out_path = Path(args.output_dir) / args.model / args.benchmark / f"question_{question['id']}.jsonl"
+        # Save per-question results (include method in path to avoid overwrites)
+        method_suffix = f"_{args.method}" if args.method != "jsd" else ""
+        out_path = Path(args.output_dir) / args.model / args.benchmark / f"question_{question['id']}{method_suffix}.jsonl"
         save_jsonl(question_results, out_path)
         logger.info(f"Saved {len(question_results)} results to {out_path}")
 

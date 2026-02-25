@@ -8,6 +8,7 @@ Provides two approaches:
 """
 from __future__ import annotations
 
+import gc
 import logging
 from dataclasses import dataclass, field
 
@@ -93,6 +94,7 @@ class HiddenStateGenerator:
         threshold_g: float = 0.5,
         depth_ratio_rho: float = 0.85,
         store_jsd_matrix: bool = False,
+        method: str = "jsd",
     ) -> None:
         self.loaded_model = loaded_model
         self.max_new_tokens = max_new_tokens
@@ -102,6 +104,7 @@ class HiddenStateGenerator:
         self.threshold_g = threshold_g
         self.depth_ratio_rho = depth_ratio_rho
         self.store_jsd_matrix = store_jsd_matrix
+        self.method = method
 
     # --------------------------------------------------------------------- #
     # Public API                                                              #
@@ -147,6 +150,7 @@ class HiddenStateGenerator:
             layer_norm=self.loaded_model.final_layer_norm,
             threshold_g=self.threshold_g,
             depth_ratio_rho=self.depth_ratio_rho,
+            method=self.method,
         )
 
         # Storage
@@ -161,7 +165,20 @@ class HiddenStateGenerator:
         # KV-cache will be managed by the model via past_key_values
         past_key_values = None
         cur_input_ids = input_ids
-        cur_attention_mask = attention_mask
+
+        # Pre-allocate attention mask buffer to avoid O(T^2) memory from
+        # repeated torch.cat (each cat allocates a new, larger tensor).
+        prompt_len = input_ids.shape[1]
+        if attention_mask is not None:
+            attn_mask_buf = torch.ones(
+                (1, prompt_len + self.max_new_tokens),
+                dtype=attention_mask.dtype, device=device,
+            )
+            attn_mask_buf[:, :prompt_len] = attention_mask
+            cur_attention_mask = attn_mask_buf[:, :prompt_len]
+        else:
+            attn_mask_buf = None
+            cur_attention_mask = None
 
         for step in range(self.max_new_tokens):
             # Forward pass with hidden states and KV cache
@@ -212,9 +229,15 @@ class HiddenStateGenerator:
             entropies.append(entropy)
             generated_ids.append(next_token)
 
-            # --- Clean up GPU tensors we no longer need ---
+            # --- Clean up tensors we no longer need ---
             del hidden_states_tuple, per_layer_hs, logits, outputs
+            del log_prob_dist, prob_dist
             # (past_key_values is kept for the next step)
+
+            # Periodic GC to prevent memory buildup from tensor fragmentation
+            if step % 512 == 0:
+                gc.collect()
+                torch.cuda.empty_cache()
 
             # --- Check stopping condition ---
             if next_token == eos_token_id:
@@ -228,12 +251,9 @@ class HiddenStateGenerator:
             # For the next step we only feed the newly generated token
             cur_input_ids = torch.tensor([[next_token]], dtype=torch.long, device=device)
 
-            # Extend attention mask by one position
-            if cur_attention_mask is not None:
-                cur_attention_mask = torch.cat(
-                    [cur_attention_mask, torch.ones((1, 1), dtype=cur_attention_mask.dtype, device=device)],
-                    dim=1,
-                )
+            # Extend attention mask by one position (slice into pre-allocated buffer)
+            if attn_mask_buf is not None:
+                cur_attention_mask = attn_mask_buf[:, :prompt_len + step + 2]
 
         # --- Aggregate results ---
         dtr_results = accumulator.get_results()

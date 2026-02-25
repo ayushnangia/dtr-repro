@@ -20,7 +20,15 @@ from typing import Any
 import numpy as np
 import torch
 
-from dtr.metrics.distances import batch_jsd, cosine_distance, jsd, kld
+from dtr.metrics.distances import (
+    batch_jsd,
+    batch_cosine_distance,
+    batch_norm_weighted_cosine,
+    cosine_distance,
+    jsd,
+    kld,
+    SVDCompressedUnembedding,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +40,8 @@ def compute_jsd_per_layer(
     lm_head_weight: torch.Tensor,
     layer_norm: Any,
     base: float = 2.0,
+    *,
+    _buffers: dict[str, torch.Tensor] | None = None,
 ) -> torch.Tensor:
     """For a single token position, compute JSD between each layer's
     distribution and the final layer's distribution.
@@ -55,6 +65,11 @@ def compute_jsd_per_layer(
         The model's final RMSNorm (or equivalent) module.
     base : float, optional
         Logarithm base for JSD (default 2.0 gives range [0, 1]).
+    _buffers : dict or None, optional
+        Pre-allocated working buffers to avoid CPU memory fragmentation.
+        Expected keys: ``"logits"``, ``"probs"``, ``"m"`` -- each of shape
+        ``(num_layers, vocab_size)`` in float32.  When ``None``, buffers
+        are allocated on the fly (original behaviour).
 
     Returns
     -------
@@ -64,27 +79,79 @@ def compute_jsd_per_layer(
     num_layers = hidden_states.size(0)
     device = hidden_states.device
 
-    lm_head_weight = lm_head_weight.to(device)
+    # Apply norm on whatever device it lives on (don't move it -- it's
+    # shared with the model and device_map="auto" owns its placement).
+    norm_device = next(layer_norm.parameters()).device if hasattr(layer_norm, "parameters") else device
 
     # 1. Normalise all layers using the final layer norm.
-    #    Move hidden states to the norm's device, apply, then move back.
-    #    This avoids issues with device_map="auto" dispatch hooks.
-    norm_device = next(layer_norm.parameters()).device if hasattr(layer_norm, "parameters") else device
     normed = torch.stack([
         layer_norm(hidden_states[i].to(norm_device)).to(device)
         for i in range(num_layers)
     ])
 
-    # 2. Project to vocabulary space.
-    logits = normed @ lm_head_weight.t()  # (num_layers, vocab_size)
+    if _buffers is not None:
+        # --- In-place path: reuse pre-allocated buffers ---
+        logits_buf = _buffers["logits"]
+        probs_buf = _buffers["probs"]
+        m_buf = _buffers["m"]
 
-    # 3. Softmax -> probability distributions.
-    probs = torch.softmax(logits, dim=-1)  # (num_layers, vocab_size)
+        # 2. Project to vocabulary space (in-place into logits_buf).
+        torch.mm(normed, lm_head_weight.t(), out=logits_buf)
+        del normed
 
-    # 4. JSD of each layer against the final layer.
-    p_final = probs[-1]  # (vocab_size,)
-    jsd_values = batch_jsd(probs, p_final, base=base)  # (num_layers,)
+        # 3. Softmax in-place into probs_buf.
+        torch.softmax(logits_buf, dim=-1, out=probs_buf)
 
+        # 4. JSD of each layer against the final layer (in-place).
+        jsd_values = _batch_jsd_inplace(probs_buf, m_buf, base=base)
+        return jsd_values
+    else:
+        # --- Original allocation path (for non-streaming callers) ---
+        logits = normed @ lm_head_weight.t()
+        del normed
+
+        probs = torch.softmax(logits, dim=-1)
+        del logits
+
+        p_final = probs[-1]
+        jsd_values = batch_jsd(probs, p_final, base=base)
+        del probs, p_final
+
+        return jsd_values
+
+
+def _batch_jsd_inplace(
+    probs: torch.Tensor,
+    m_buf: torch.Tensor,
+    base: float = 2.0,
+) -> torch.Tensor:
+    """Compute batch JSD using a pre-allocated buffer for the mixture ``m``.
+
+    Operates on *probs* in-place where possible to minimise allocations.
+    """
+    _EPS = 1e-10
+    probs.clamp_(min=_EPS)
+    p_final = probs[-1]  # view, no alloc
+
+    # m = 0.5 * (probs + p_final)
+    m_buf.copy_(probs)
+    m_buf.add_(p_final.unsqueeze(0))
+    m_buf.mul_(0.5)
+
+    log_base = math.log(base)
+
+    # KL(p || m) per layer
+    # Use probs.log() - m_buf.log() in a memory-friendly way:
+    # Compute log in-place on m_buf, store result, then restore m_buf later.
+    log_m = m_buf.log()  # (num_layers, vocab_size) -- reuses m_buf storage
+    log_p = probs.log()
+    kl_pm = (probs * (log_p - log_m)).sum(dim=-1) / log_base
+
+    # KL(q || m) where q = p_final
+    q_log = p_final.log()
+    kl_qm = (p_final.unsqueeze(0) * (q_log.unsqueeze(0) - log_m)).sum(dim=-1) / log_base
+
+    jsd_values = 0.5 * kl_pm + 0.5 * kl_qm
     return jsd_values
 
 
@@ -92,7 +159,10 @@ def compute_jsd_per_layer(
 # Generic per-layer distance computation
 # ---------------------------------------------------------------------------
 
-_SUPPORTED_DISTANCE_METHODS = ("jsd", "kld", "reverse_kld", "cosine", "wasserstein")
+_SUPPORTED_DISTANCE_METHODS = (
+    "jsd", "kld", "reverse_kld", "cosine", "wasserstein",
+    "norm_weighted_cosine", "svd_jsd",
+)
 
 
 def compute_distance_per_layer(
@@ -103,6 +173,7 @@ def compute_distance_per_layer(
     embeddings: torch.Tensor | None = None,
     base: float = 2.0,
     wasserstein_k: int = 100,
+    **kwargs: Any,
 ) -> torch.Tensor:
     """Compute a per-layer distance between each layer and the final layer.
 
@@ -147,14 +218,21 @@ def compute_distance_per_layer(
 
     num_layers = hidden_states.size(0)
 
-    # --- Cosine distance operates on raw hidden states, no projection ----
+    # --- Hidden-space methods (no vocab projection) ---------------------
     if method == "cosine":
-        final_hidden = hidden_states[-1]  # (hidden_dim,)
-        distances = torch.stack([
-            cosine_distance(hidden_states[i], final_hidden)
-            for i in range(num_layers)
-        ])
-        return distances
+        return batch_cosine_distance(hidden_states, hidden_states[-1])
+
+    if method == "norm_weighted_cosine":
+        return batch_norm_weighted_cosine(hidden_states, hidden_states[-1])
+
+    # --- SVD-compressed JSD (needs svd_projector kwarg) ----------------
+    if method == "svd_jsd":
+        # Caller must pass svd_projector via the DTRAccumulator; for the
+        # generic API we fall back to building one on the fly.
+        svd_proj = kwargs.get("svd_projector")
+        if svd_proj is None:
+            svd_proj = SVDCompressedUnembedding(lm_head_weight, k=256)
+        return svd_proj.batch_jsd(hidden_states, layer_norm=layer_norm, base=base)
 
     # --- All other methods require vocab-space projection ----------------
     # 1. Layer-norm all hidden states.
@@ -573,10 +651,36 @@ class DTRAccumulator:
         self.embeddings = embeddings
         self.wasserstein_k = wasserstein_k
 
+        # Cache lm_head_weight and layer_norm on the device that will be
+        # used for hidden states (typically CUDA).  This avoids a 1.5GB+
+        # CPU->GPU copy on every single token.
+        self._device_cached = False
+
+        # Pre-allocated working buffers for compute_jsd_per_layer.
+        # Allocated lazily on first add_token() once we know vocab_size
+        # and device.  Reusing these buffers across 32K+ calls eliminates
+        # ~3 TB of CPU allocation churn that causes memory fragmentation.
+        self._jsd_buffers: dict[str, torch.Tensor] | None = None
+
+        # SVD projector for svd_jsd method (created once, reused).
+        self._svd_projector: SVDCompressedUnembedding | None = None
+
         # Accumulated results.
         self._distance_rows: list[torch.Tensor] = []
         self._settling_depths: list[int] = []
         self._deep_thinking_mask: list[bool] = []
+
+    # -----------------------------------------------------------------
+    def _ensure_buffers(self, device: torch.device) -> None:
+        """Lazily allocate reusable working buffers on first call."""
+        if self._jsd_buffers is not None:
+            return
+        vocab_size = self.lm_head_weight.size(0)
+        self._jsd_buffers = {
+            "logits": torch.empty(self.num_layers, vocab_size, dtype=torch.float32, device=device),
+            "probs": torch.empty(self.num_layers, vocab_size, dtype=torch.float32, device=device),
+            "m": torch.empty(self.num_layers, vocab_size, dtype=torch.float32, device=device),
+        }
 
     # -----------------------------------------------------------------
     def add_token(self, hidden_states: torch.Tensor) -> dict:
@@ -594,9 +698,27 @@ class DTRAccumulator:
             ``is_deep``.  When *method* is ``"jsd"`` the key
             ``jsd_values`` is also included for backward compatibility.
         """
+        # On first call, move lm_head_weight to hidden states' device once.
+        # Do NOT move layer_norm -- it's a reference to the model's own norm
+        # module and moving it breaks device_map="auto" dispatch.
+        if not self._device_cached:
+            device = hidden_states.device
+            self.lm_head_weight = self.lm_head_weight.to(device)
+            self._device_cached = True
+
         if self.method == "jsd":
+            self._ensure_buffers(hidden_states.device)
             distance_values = compute_jsd_per_layer(
-                hidden_states, self.lm_head_weight, self.layer_norm
+                hidden_states, self.lm_head_weight, self.layer_norm,
+                _buffers=self._jsd_buffers,
+            )
+        elif self.method == "svd_jsd":
+            if self._svd_projector is None:
+                self._svd_projector = SVDCompressedUnembedding(
+                    self.lm_head_weight, k=256,
+                )
+            distance_values = self._svd_projector.batch_jsd(
+                hidden_states, layer_norm=self.layer_norm,
             )
         else:
             distance_values = compute_distance_per_layer(

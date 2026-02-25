@@ -54,6 +54,24 @@ echo "================================="
 
 nvidia-smi
 
+# Background monitor: log peak VRAM and RAM every 30s
+PEAK_LOG="${SLURM_TMPDIR}/peak_usage.log"
+(
+  peak_ram=0
+  peak_vram=0
+  while true; do
+    ram_mb=$(free -m | awk '/Mem:/{print $3}')
+    vram_mb=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1)
+    vram_mb=${vram_mb:-0}
+    (( ram_mb > peak_ram )) && peak_ram=$ram_mb
+    (( vram_mb > peak_vram )) && peak_vram=$vram_mb
+    echo "$(date +%H:%M:%S) RAM: ${ram_mb}MB (peak ${peak_ram}MB) | VRAM: ${vram_mb}MB (peak ${peak_vram}MB)" > "${PEAK_LOG}"
+    sleep 30
+  done
+) &
+MONITOR_PID=$!
+trap "kill ${MONITOR_PID} 2>/dev/null; cat ${PEAK_LOG} 2>/dev/null; echo '=== Peak usage above ==='" EXIT
+
 # Stage data to fast local storage
 DATA_SRC="${DATA_DIR:-${PROJECT:-$HOME}/dtr-data}"
 if [[ -d "${DATA_SRC}" ]]; then

@@ -421,3 +421,185 @@ def batch_wasserstein_topk(
         )
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Lightweight hidden-space metrics (no vocab projection)
+# ---------------------------------------------------------------------------
+
+
+def norm_weighted_cosine(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """Norm-weighted cosine distance: captures both direction and scale.
+
+    ``d(x, y) = (1 - cos(x, y)) * (||x|| + ||y||) / 2``
+
+    More informative than plain cosine because it is sensitive to norm
+    changes across layers (which affect softmax temperature / distribution
+    sharpness).
+
+    Parameters
+    ----------
+    x, y : torch.Tensor
+        1-D vectors of the same length.
+
+    Returns
+    -------
+    torch.Tensor
+        Scalar distance (>= 0).
+    """
+    cos_sim = torch.nn.functional.cosine_similarity(
+        x.unsqueeze(0), y.unsqueeze(0)
+    ).squeeze(0)
+    avg_norm = 0.5 * (x.norm() + y.norm())
+    return (1.0 - cos_sim) * avg_norm
+
+
+def batch_cosine_distance(
+    h_batch: torch.Tensor, h_ref: torch.Tensor,
+) -> torch.Tensor:
+    """Cosine distance between each row of *h_batch* and *h_ref*.
+
+    Parameters
+    ----------
+    h_batch : torch.Tensor
+        Shape ``(num_layers, hidden_dim)``.
+    h_ref : torch.Tensor
+        Shape ``(hidden_dim,)`` -- typically the final layer hidden state.
+
+    Returns
+    -------
+    torch.Tensor
+        Shape ``(num_layers,)`` of cosine distances in [0, 2].
+    """
+    cos_sim = torch.nn.functional.cosine_similarity(
+        h_batch, h_ref.unsqueeze(0), dim=-1,
+    )
+    return 1.0 - cos_sim
+
+
+def batch_norm_weighted_cosine(
+    h_batch: torch.Tensor, h_ref: torch.Tensor,
+) -> torch.Tensor:
+    """Norm-weighted cosine distance between each row and *h_ref*.
+
+    Parameters
+    ----------
+    h_batch : torch.Tensor
+        Shape ``(num_layers, hidden_dim)``.
+    h_ref : torch.Tensor
+        Shape ``(hidden_dim,)``.
+
+    Returns
+    -------
+    torch.Tensor
+        Shape ``(num_layers,)`` of distances (>= 0).
+    """
+    cos_sim = torch.nn.functional.cosine_similarity(
+        h_batch, h_ref.unsqueeze(0), dim=-1,
+    )
+    norms = h_batch.norm(dim=-1)
+    ref_norm = h_ref.norm()
+    avg_norms = 0.5 * (norms + ref_norm)
+    return (1.0 - cos_sim) * avg_norms
+
+
+# ---------------------------------------------------------------------------
+# SVD-compressed unembedding JSD
+# ---------------------------------------------------------------------------
+
+
+class SVDCompressedUnembedding:
+    """Low-rank approximation of the unembedding matrix for fast JSD.
+
+    Pre-computes the top-*k* SVD of the unembedding (lm_head) weight matrix.
+    Hidden states are projected to *k* dimensions instead of the full
+    vocabulary, then JSD is computed in this compressed space.
+
+    This gives ~300-600x speedup over full-vocab JSD while capturing the
+    dominant modes of distributional variation.
+
+    Parameters
+    ----------
+    lm_head_weight : torch.Tensor
+        Shape ``(vocab_size, hidden_dim)`` -- the unembedding matrix.
+    k : int
+        Number of singular components to keep (default 256).
+    """
+
+    def __init__(self, lm_head_weight: torch.Tensor, k: int = 256) -> None:
+        # W = U @ diag(S) @ V^T  where W is (V, d)
+        # We want to project hidden states h (d,) -> compressed logits (k,)
+        # compressed_logits = h @ V_k @ diag(S_k) = h @ projection_matrix
+        # where projection_matrix is (d, k)
+        U, S, Vh = torch.linalg.svd(lm_head_weight.float(), full_matrices=False)
+        # U: (V, min(V,d)), S: (min(V,d),), Vh: (min(V,d), d)
+        # Keep top-k components
+        self.k = min(k, S.shape[0])
+        # projection = Vh[:k].T @ diag(S[:k]) -> shape (d, k)
+        self.projection = (Vh[:self.k].T * S[:self.k].unsqueeze(0))
+        self._device_cached = False
+
+    def project(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Project hidden states to compressed logit space.
+
+        Parameters
+        ----------
+        hidden_states : torch.Tensor
+            Shape ``(num_layers, hidden_dim)`` or ``(hidden_dim,)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Shape ``(num_layers, k)`` or ``(k,)``.
+        """
+        if not self._device_cached:
+            self.projection = self.projection.to(hidden_states.device)
+            self._device_cached = True
+        return hidden_states @ self.projection
+
+    def batch_jsd(
+        self,
+        hidden_states: torch.Tensor,
+        layer_norm: object | None = None,
+        base: float = 2.0,
+    ) -> torch.Tensor:
+        """Compute per-layer JSD in compressed space.
+
+        Parameters
+        ----------
+        hidden_states : torch.Tensor
+            Shape ``(num_layers, hidden_dim)``.
+        layer_norm : callable or None
+            If provided, apply final layer norm before projection (logit
+            lens style).  Pass ``None`` to skip (paper's literal formula).
+        base : float
+            Logarithm base for JSD.
+
+        Returns
+        -------
+        torch.Tensor
+            Shape ``(num_layers,)`` of JSD values.
+        """
+        if layer_norm is not None:
+            norm_device = (
+                next(layer_norm.parameters()).device
+                if hasattr(layer_norm, "parameters")
+                else hidden_states.device
+            )
+            device = hidden_states.device
+            normed = torch.stack([
+                layer_norm(hidden_states[i].to(norm_device)).to(device)
+                for i in range(hidden_states.size(0))
+            ])
+        else:
+            normed = hidden_states
+
+        # Project to compressed space: (num_layers, k)
+        compressed_logits = self.project(normed)
+
+        # Softmax over compressed dims
+        probs = torch.softmax(compressed_logits, dim=-1)
+
+        # JSD of each layer against final layer
+        p_final = probs[-1]
+        return batch_jsd(probs, p_final, base=base)
